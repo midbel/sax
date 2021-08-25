@@ -34,8 +34,9 @@ const (
 )
 
 var (
-	ErrStop        = errors.New("stop")
 	ErrSkip        = errors.New("skip")
+	ErrIgnore      = errors.New("ignore")
+	ErrStop        = errors.New("stop")
 	ErrUnsubscribe = errors.New("unsubscribe")
 	ErrChar        = errors.New("unepected character")
 	ErrMalformed   = errors.New("malformed document")
@@ -106,10 +107,10 @@ type Attr struct {
 	Value string
 }
 
-type KeepFunc func(NodeType, Name) bool
+type KeepFunc func(NodeType, Name) error
 
-func keepAll(_ NodeType, _ Name) bool {
-	return true
+func keepAll(_ NodeType, _ Name) error {
+	return nil
 }
 
 type Reader struct {
@@ -120,6 +121,7 @@ type Reader struct {
 	keep  KeepFunc
 
 	listeners struct {
+		silent   bool
 		begins   []func(Name) error
 		ends     []func(Name) error
 		insts    []func(Name) error
@@ -150,11 +152,36 @@ func (r *Reader) Read() (*Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		ok := r.keep(n.Type, n.Name)
-		if ok {
-			return n, nil
+		switch err = r.keep(n.Type, n.Name); {
+		case errors.Is(err, ErrIgnore):
+			err := r.skipSubtree(n)
+			if err != nil {
+				return nil, err
+			}
+		case errors.Is(err, ErrSkip):
+		default:
+			return n, err
 		}
 	}
+}
+
+func (r *Reader) skipSubtree(n *Node) error {
+	if n.Type != BeginElement || n.SelfClosing {
+		return nil
+	}
+	r.listeners.silent = true
+	depth := r.Depth()
+	for {
+		c, err := r.next()
+		if err != nil {
+			return err
+		}
+		if r.Depth() == depth && n.Name.Equal(c.Name) {
+			break
+		}
+	}
+	r.listeners.silent = false
+	return nil
 }
 
 func (r *Reader) Run() error {
@@ -651,35 +678,53 @@ func (r *Reader) wantFunc(fn func(rune) bool) error {
 
 func (r *Reader) emitBegin(n Name) error {
 	var err error
+	if r.listeners.silent {
+		return err
+	}
 	r.listeners.begins, err = r.emitNode(n, r.listeners.begins)
 	return err
 }
 
 func (r *Reader) emitEnd(n Name) error {
 	var err error
+	if r.listeners.silent {
+		return err
+	}
 	r.listeners.ends, err = r.emitNode(n, r.listeners.ends)
 	return err
 }
 
 func (r *Reader) emitInst(n Name) error {
 	var err error
+	if r.listeners.silent {
+		return err
+	}
 	r.listeners.insts, err = r.emitNode(n, r.listeners.insts)
 	return err
 }
 
 func (r *Reader) emitText(str string) error {
 	var err error
+	if r.listeners.silent {
+		return err
+	}
 	r.listeners.texts, err = r.emitString(str, r.listeners.texts)
 	return err
 }
 
 func (r *Reader) emitComment(str string) error {
 	var err error
+	if r.listeners.silent {
+		return err
+	}
 	r.listeners.comments, err = r.emitString(str, r.listeners.comments)
 	return err
 }
 
 func (r *Reader) emitAttr(n Name, str string) error {
+	if r.listeners.silent {
+		return nil
+	}
 	for i := 0; i < len(r.listeners.attrs); i++ {
 		fn := r.listeners.attrs[i]
 		if err := fn(n, str); err != nil {

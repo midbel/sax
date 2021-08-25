@@ -41,8 +41,11 @@ func main() {
 	}
 	defer r.Close()
 
-	rs := sax.New(r, func(t sax.NodeType, _ sax.Name) bool {
-		return t == sax.BeginElement || t == sax.EndElement
+	rs := sax.New(r, func(t sax.NodeType, _ sax.Name) error {
+		if t == sax.BeginElement || t == sax.EndElement {
+			return nil
+		}
+		return sax.ErrIgnore
 	})
 	// rs := New(strings.NewReader(sample), nil)
 	for i := 0; ; i++ {
