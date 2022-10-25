@@ -78,11 +78,19 @@ type Name struct {
 	Name string
 }
 
-func (n Name) String() string {
+func (n Name) LocalName() string {
+	return n.Name
+}
+
+func (n Name) Fqn() string {
 	if n.NS == "" {
 		return n.Name
 	}
 	return fmt.Sprintf("%s:%s", n.NS, n.Name)
+}
+
+func (n Name) String() string {
+	return n.Fqn()
 }
 
 func (n Name) IsValid() bool {
