@@ -177,7 +177,8 @@ func (r *Reader) skipSubtree(n *Node) error {
 	if n.Type != BeginElement || n.SelfClosing {
 		return nil
 	}
-	r.listeners.silent = true
+	r.silent()
+	defer r.silent()
 	depth := r.Depth()
 	for {
 		c, err := r.next()
@@ -188,7 +189,6 @@ func (r *Reader) skipSubtree(n *Node) error {
 			break
 		}
 	}
-	r.listeners.silent = false
 	return nil
 }
 
@@ -226,6 +226,10 @@ func (r *Reader) OnText(fn func(string) error) {
 
 func (r *Reader) OnComment(fn func(string) error) {
 	r.listeners.comments = append(r.listeners.comments, fn)
+}
+
+func (r *Reader) silent() {
+	r.listeners.silent = !r.listeners.silent
 }
 
 func (r *Reader) next() (*Node, error) {
